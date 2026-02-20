@@ -1,0 +1,1 @@
+global using InitializationContext = Microsoft.CodeAnalysis.IncrementalGeneratorPostInitializationContext;
