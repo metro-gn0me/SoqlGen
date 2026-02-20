@@ -40,13 +40,18 @@ internal static class SymbolHelpers
             }
 
             var syntax = decl.GetSyntax();
+            var semanticModel = compilation.GetSemanticModel(syntax.SyntaxTree);
             var attrLists = syntax.ChildNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.AttributeListSyntax>();
             foreach (var list in attrLists)
             {
                 foreach (var attr in list.Attributes)
                 {
-                    var name = attr.Name.ToString();
-                    if (name.EndsWith("SoqlField") || name.Contains("SoqlField"))
+                    // Resolve the attribute type symbol and compare by metadata name to avoid fragile string matching
+                    var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol as IMethodSymbol;
+                    var attrType = attrSymbol?.ContainingType;
+                    if (attrType is null) continue;
+
+                    if (attrType.Name is "SoqlFieldAttribute" or "SoqlField")
                     {
                         return attr.GetLocation();
                     }
@@ -81,13 +86,17 @@ internal static class SymbolHelpers
             }
 
             var syntax = decl.GetSyntax();
+            var semanticModel = compilation.GetSemanticModel(syntax.SyntaxTree);
             var attrLists = syntax.ChildNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.AttributeListSyntax>();
             foreach (var list in attrLists)
             {
                 foreach (var attr in list.Attributes)
                 {
-                    var name = attr.Name.ToString();
-                    if (name.EndsWith("SoqlObject") || name.Contains("SoqlObject"))
+                    var attrSymbol = semanticModel.GetSymbolInfo(attr).Symbol as IMethodSymbol;
+                    var attrType = attrSymbol?.ContainingType;
+                    if (attrType is null) continue;
+
+                    if (attrType.Name is "SoqlObjectAttribute" or "SoqlObject")
                     {
                         return attr.GetLocation();
                     }

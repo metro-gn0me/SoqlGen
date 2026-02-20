@@ -230,7 +230,10 @@ internal static partial class Texts
         public static partial class {{nameof(SoqlCollection)}}
         {
             /// <summary>
-            /// Safely extracts a value from JsonElement, returning default if null or missing.
+            /// Safely extracts a value from a JsonElement by property name. This helper performs a
+            /// TryGetProperty on the provided record, handles null/undefined values and guards the extractor
+            /// from throwing InvalidOperationException. Generated code calls this to keep deserialization
+            /// expressions compact and safe.
             /// </summary>
             internal static T SafeGetValue<T>(this System.Text.Json.JsonElement record, string propName, System.Func<System.Text.Json.JsonElement, T> extractor)
             {
@@ -255,7 +258,9 @@ internal static partial class Texts
             }
 
             /// <summary>
-            /// Safely extracts an array from JsonElement.
+            /// Safely extracts an array from a JsonElement by property name. Returns null if the
+            /// property is missing or is not an array. Each element is extracted using the provided
+            /// extractor and guarded against InvalidOperationException.
             /// </summary>
             internal static T[]? SafeGetArray<T>(this System.Text.Json.JsonElement record, string propName, System.Func<System.Text.Json.JsonElement, T> extractor)
             {

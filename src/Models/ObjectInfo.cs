@@ -9,6 +9,9 @@ internal record struct ObjectInfo(
     string ClassName,
     string TargetSymbolKey)
 {
+    // ObjectInfo stores stable strings rather than Roslyn symbols so we can re-resolve symbols on demand
+    // against the compilation currently being analyzed. Use ResolveModelSymbol(compilation) to get the live symbol.
+
     public static ObjectInfo FromSymbol(string objectName, string key, bool keyRequired, INamedTypeSymbol model)
     {
         // Use the model's display string as a stable identifier to re-resolve later
