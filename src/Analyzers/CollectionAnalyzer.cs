@@ -7,10 +7,9 @@ namespace SoqlGen.Analyzers;
 
 internal static class CollectionAnalyzer
 {
-    public static (
-        Dictionary<(string ClassName, string Key), QueryObject> QueryObjects,
-        List<Diagnostic> Diagnostics
-    ) ExtractAndValidateInfo(this (ImmutableArray<ObjectInfo> Left, ImmutableArray<FieldInfo> Right) combined, Compilation compilation)
+    public static (QueryDictionary QueryObjects, List<Diagnostic> Diagnostics) ExtractAndValidateInfo(
+        this (ImmutableArray<ObjectInfo> Left, ImmutableArray<FieldInfo> Right) combined,
+        Compilation compilation)
     {
         var diagnostics = new List<Diagnostic>();
 
@@ -18,10 +17,19 @@ internal static class CollectionAnalyzer
         var objs = new Dictionary<(string ClassName, string Key), ObjectInfo>();
         var fields = new Dictionary<(string ClassName, string Key), List<FieldInfo>>();
 
+        // Process objects first
         foreach (var o in combined.Left)
         {
-            var modelSym = o.ResolveModelSymbol(compilation);
-            if (modelSym is not null && modelSym.Constructors.All(c => c.Parameters.Length > 0))
+            // Re-resolve the model symbol from the current compilation to avoid stale references
+            var modelSym = compilation.GetTypeByMetadataName(o.ClassName);
+            if (modelSym is null)
+            {
+                // Skip if type can't be resolved in current compilation
+                continue;
+            }
+
+            // Check for parameterless constructor
+            if (modelSym.Constructors.All(c => c.Parameters.Length > 0))
             {
                 diagnostics.Add(DiagnosticPresets.MissingParameterlessConstructor(o, compilation));
                 continue;
@@ -40,10 +48,21 @@ internal static class CollectionAnalyzer
             objs[(className, key)] = o;
         }
 
+        // Process fields
         foreach (var f in combined.Right)
         {
-            var prop = f.ResolvePropertySymbol(compilation);
-            if (prop is null || prop.SetMethod is null ||
+            // Re-resolve the property symbol from the current compilation
+
+            if (compilation.GetTypeByMetadataName(f.ClassName)
+                ?.GetMembers(f.PropertyName)
+                .FirstOrDefault() is not IPropertySymbol prop)
+            {
+                // Skip if property can't be resolved in current compilation
+                continue;
+            }
+
+            // Validate property accessibility
+            if (prop.SetMethod is null ||
                 (prop.SetMethod.DeclaredAccessibility is Accessibility.Private or Accessibility.Protected) &&
                 !prop.SetMethod.IsInitOnly)
             {
@@ -71,42 +90,52 @@ internal static class CollectionAnalyzer
                 fields[(className, key)] = list;
             }
 
+            // Check for duplicate fields
             if (list.Any(existing => existing.PropertyName == f.PropertyName && existing.FieldName == f.FieldName))
             {
                 diagnostics.Add(DiagnosticPresets.DuplicateField(f, compilation));
                 continue;
             }
+
             list.Add(f);
         }
 
+        // Remove objects with no fields and report warnings
         var objectsWithNoFields = objs.Where(o => !fields.ContainsKey(o.Key));
-        diagnostics.AddRange(objectsWithNoFields.Select(o => DiagnosticPresets.ObjectWithNoFields(o.Value, compilation)));
-        foreach (var o in objectsWithNoFields.Select(o => o.Key).ToList())
+        foreach (var objPair in objectsWithNoFields)
         {
-            objs.Remove(o);
+            diagnostics.Add(DiagnosticPresets.ObjectWithNoFields(objPair.Value, compilation));
+            objs.Remove(objPair.Key);
         }
 
-        var queryObjects = objs.ToDictionary(
-            o => (o.Key.ClassName, o.Key.Key),
-            o =>
-            {
-                var fieldList = fields.TryGetValue(o.Key, out var keyList) ? keyList : [];
-                var resolvedQueryFields = new List<QueryField>(fieldList.Count);
-                foreach (var f in fieldList)
-                {
-                    var prop = f.ResolvePropertySymbol(compilation);
-                    if (prop is not null)
-                    {
-                        resolvedQueryFields.Add(QueryField.FromResolved(f, prop));
-                    }
-                    else
-                    {
-                        resolvedQueryFields.Add(QueryField.FromUnresolved(f));
-                    }
-                }
+        // Build QueryObjects with resolved symbols
+        var queryObjects = new QueryDictionary();
 
-                return new QueryObject(o.Value, resolvedQueryFields);
-            });
+        foreach (var objPair in objs)
+        {
+            var objectInfo = objPair.Value;
+            var fieldList = fields.TryGetValue(objPair.Key, out var keyList) ? keyList : [];
+            var resolvedQueryFields = new List<QueryField>(fieldList.Count);
+
+            foreach (var f in fieldList)
+            {
+                // Re-resolve the property symbol to get current type information
+                var prop = compilation.GetTypeByMetadataName(f.ClassName)
+                    ?.GetMembers(f.PropertyName)
+                    .FirstOrDefault() as IPropertySymbol;
+
+                if (prop is not null)
+                {
+                    resolvedQueryFields.Add(QueryField.FromResolved(f, prop));
+                }
+                else
+                {
+                    resolvedQueryFields.Add(QueryField.FromUnresolved(f));
+                }
+            }
+
+            queryObjects[objPair.Key] = new QueryObject(objectInfo, resolvedQueryFields);
+        }
 
         return (queryObjects, diagnostics);
     }

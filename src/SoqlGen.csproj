@@ -2,16 +2,40 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <IncludeBuildOutput>true</IncludeBuildOutput>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
     <Nullable>enable</Nullable>
     <ImplicitUsings>true</ImplicitUsings>
     <LangVersion>Latest</LangVersion>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <DevelopmentDependency>true</DevelopmentDependency>
 
+    <!-- Package Information -->
     <PackageId>SoqlGen</PackageId>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <Authors>metro-gn0me</Authors>
-    <Description>A source generator to dynamically generate SOQL queries from C# model classes</Description>
+    <Company>metro-gn0me</Company>
+    <Product>SoqlGen</Product>
+    <Description>A source generator to dynamically generate SOQL queries from C# model classes with automatic deserialization support.</Description>
+    <Summary>Generate SOQL queries and serialization code from C# models using source generators</Summary>
+    <PackageTags>soql;salesforce;source-generator;roslyn;analyzer;code-generation</PackageTags>
+    <PackageProjectUrl>https://github.com/metro-gn0me/SoqlGen</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/metro-gn0me/SoqlGen</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>GPL-3.0-or-later</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
+    <Copyright>Copyright (c) 2025 metro-gn0me</Copyright>
+    <PackageReleaseNotes>
+      v1.0.3:
+      - Fixed LSP compilation errors
+      - Improved nullable reference type support
+      - Optimized generated code structure
+    </PackageReleaseNotes>
+    <PackageReadmeFile>../README.md</PackageReadmeFile>
+
+    <!-- Source Generator specific -->
+    <IncludeSymbols>false</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,11 +46,20 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Include the generator assembly -->
     <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+
+    <!-- Include dependencies that aren't automatically included -->
+    <None Include="$(PkgSystem_Text_Json)\lib\netstandard2.0\System.Text.Json.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+    <None Include="$(PkgMicrosoft_Bcl_HashCode)\lib\netstandard2.0\Microsoft.Bcl.HashCode.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" Condition="'$(TargetFramework)' == 'netstandard2.0'" />
+
+    <!-- Package files -->
+    <None Include="README.md" Pack="true" PackagePath="\" Condition="Exists('../README.md')" />
   </ItemGroup>
 
   <ItemGroup>
     <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
     <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
+
 </Project>

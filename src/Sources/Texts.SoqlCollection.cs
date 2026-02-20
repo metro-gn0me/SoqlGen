@@ -12,7 +12,7 @@ internal static partial class Texts
 
     public static (string? Source, Diagnostic? Diagnostic) GenerateSoqlCollectionSourceAndDiagnostic(
         QueryObject queryObject,
-        Dictionary<(string ClassName, string Key), QueryObject> queryObjects)
+        QueryDictionary queryObjects)
     {
         var (query, diagnostic) = queryObject.GenerateQuery(queryObjects);
 
@@ -28,135 +28,299 @@ internal static partial class Texts
         namespace {{nameof(SoqlGen)}};
 
         #nullable enable
+        #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor
+        #pragma warning disable CS8601 // Possible null reference assignment
+        #pragma warning disable CS8603 // Possible null reference return
+        #pragma warning disable CS8604 // Possible null reference argument
+        
         public static partial class {{nameof(SoqlCollection)}}
         {
             public static partial class {{queryObject.Key}}
             {
-                public static class Model{{GetShortClassName(queryObject.ClassName)}}
+                public static class Model{{GetClassName(queryObject.ClassName)}}
                 {
-                    public const string Query = "{{query}}";
+                    public const string Query = "{{query}}";  
                     {{DeserializationMethodImpl(queryObject, queryObjects)}}
                 }
             }
         }
+
+        #pragma warning restore CS8618
+        #pragma warning restore CS8604
+        #pragma warning restore CS8603
+        #pragma warning restore CS8601
         """;
 
         return (sourceText, diagnostic);
     }
 
-    private static string DeserializationMethodImpl(QueryObject queryObject, Dictionary<(string ClassName, string Key), QueryObject> queryObjects) => $$"""
-        public static {{queryObject.ClassName}}[] DeserializeSoqlResponse(string jsonResponse)
-                    {
-                        using var doc = System.Text.Json.JsonDocument.Parse(jsonResponse);
-                        var root = doc.RootElement;
+    private static string DeserializationMethodImpl(QueryObject queryObject, QueryDictionary queryObjects)
+    {
+        var classFullName = queryObject.ClassName;
+        var className = GetClassName(classFullName);
+        var isNullableContext = classFullName.Contains('?');
 
-                        return DeserializeSoqlResponse(root);
-                    }
+        return $$"""
 
-                    public static {{queryObject.ClassName}}[] DeserializeSoqlResponse(System.Text.Json.JsonElement root)
+                    /// <summary>
+                    /// Deserializes a SOQL response from JSON string into an array of {{className}} objects.
+                    /// </summary>
+                    /// <param name="jsonResponse">The JSON response string from SOQL query</param>
+                    /// <returns>Array of deserialized {{className}} objects</returns>
+                    public static {{classFullName}}[] DeserializeSoqlResponse(string jsonResponse)
                     {
-                        if(root.ValueKind == System.Text.Json.JsonValueKind.Null)
+                        if (string.IsNullOrEmpty(jsonResponse))
                         {
-                            return Array.Empty<{{queryObject.ClassName}}>();
+                            return System.Array.Empty<{{classFullName}}>();
                         }
 
-                        if (!root.TryGetProperty("records", out var records))
+                        using var doc = System.Text.Json.JsonDocument.Parse(jsonResponse);
+                        return DeserializeSoqlResponse(doc.RootElement);
+                    }
+
+                    /// <summary>
+                    /// Deserializes a SOQL response from JsonElement into an array of {{className}} objects.
+                    /// </summary>
+                    /// <param name="root">The root JsonElement containing the SOQL response</param>
+                    /// <returns>Array of deserialized {{className}} objects</returns>
+                    public static {{classFullName}}[] DeserializeSoqlResponse(System.Text.Json.JsonElement root)
+                    {
+                        if (root.ValueKind == System.Text.Json.JsonValueKind.Null || 
+                            root.ValueKind == System.Text.Json.JsonValueKind.Undefined)
                         {
+                            return System.Array.Empty<{{classFullName}}>();
+                        }
+
+                        System.Text.Json.JsonElement records;
+                        
+                        // Handle both direct array responses and Salesforce-style responses with "records" property
+                        if (root.ValueKind == System.Text.Json.JsonValueKind.Array)
+                        {
+                            records = root;
+                        }
+                        else if (!root.TryGetProperty("records", out records))
+                        {
+                            // Fallback: wrap single object in array
                             var jsonArray = new System.Text.Json.Nodes.JsonArray { root };
                             records = System.Text.Json.JsonSerializer.SerializeToElement(jsonArray);
                         }
 
                         var recordCount = records.GetArrayLength();
-                        var result = new {{queryObject.ClassName}}[recordCount];
-                        for(var i = 0; i < recordCount; i++)
+                        if (recordCount == 0)
+                        {
+                            return System.Array.Empty<{{classFullName}}>();
+                        }
+
+                        var result = new {{classFullName}}[recordCount];
+                        
+                        for (var i = 0; i < recordCount; i++)
                         {
                             var record = records[i];
-                            result[i] = new()
-                            {
-                                {{string.Join($"\n{Indent}", queryObject.Fields.Select(f =>
-                                {
-                                    var soqlPrefix = $"{nameof(SoqlCollection)}.{queryObject.Key}";
-                                    var propAccessor = $"record.GetProperty(\"{f.FieldName}\")";
-
-                                    // collectionType is the declared property type (e.g. List<Foo> or Foo[])
-                                    var collectionType = f.TypeName.TrimEnd('?');
-                                    // elementType is the inner/element type (Foo) for collections, or the type itself for non-collections
-                                    var elementType = (f.IsCollection && f.CollectionBaseType is not null)
-                                        ? f.CollectionBaseType.TrimEnd('?')
-                                        : collectionType;
-
-                                    // If elementType is not a generated model, use primitive deserialization directly
-                                    if (!queryObjects.TryGetValue((elementType, queryObject.Key), out var _))
-                                    {
-                                        return $"{f.PropertyName} = {propAccessor}.ApplyOrDefault(static e => " + (elementType switch
-                                        {
-                                            "string" => "e.GetString()!",
-                                            "int" or "Int32" => "e.GetInt32()",
-                                            "long" or "Int64" => "e.GetInt64()",
-                                            "bool" or "Boolean" => "e.GetBoolean()",
-                                            "double" or "Double" => "e.GetDouble()",
-                                            "decimal" or "Decimal" => "e.GetDecimal()",
-                                            "DateTime" => "e.GetDateTime()",
-                                            _ => $"({f.TypeName})System.Text.Json.JsonSerializer.Deserialize(e, typeof({elementType}))!"
-                                        }) + "),";
-                                    }
-
-                                    var deserializationSyntax = $"{soqlPrefix}.Model{GetShortClassName(elementType)}.DeserializeSoqlResponse({propAccessor})";
-
-                                    if (f.IsCollection)
-                                    {
-                                        if (collectionType.EndsWith("[]"))
-                                        {
-                                            return $"{f.PropertyName} = {deserializationSyntax},";
-                                        }
-                                        // create an instance of the collection type, passing the deserialized element array
-                                        return $"{f.PropertyName} = ({f.TypeName})System.Activator.CreateInstance(typeof({collectionType}), new object[] {{ {deserializationSyntax} ?? default! }})!,";
-                                    }
-                                    // non-collection: take first element from deserialized element-array
-                                    return $"{f.PropertyName} = {deserializationSyntax}.FirstOrDefault(),";
-                                }))}}
-                            };
+                            result[i] = DeserializeSingleRecord(record);
                         }
 
                         return result;
                     }
-        """;
 
-    private static string GetShortClassName(string className) => className.Substring(className.LastIndexOf('.') + 1);
+                    /// <summary>
+                    /// Deserializes a single record from JsonElement into a {{className}} object.
+                    /// </summary>
+                    /// <param name="record">The JsonElement representing a single record</param>
+                    /// <returns>Deserialized {{className}} object</returns>
+                    private static {{classFullName}} DeserializeSingleRecord(System.Text.Json.JsonElement record)
+                    {
+                        return new()
+                        {
+                            {{GeneratePropertyAssignments(queryObject, queryObjects)}}
+                        };
+                    }
+        """;
+    }
+
+    private static string GeneratePropertyAssignments(QueryObject queryObject, QueryDictionary queryObjects)
+    {
+        var assignments = queryObject.Fields.Select(field => GeneratePropertyAssignment(field, queryObject, queryObjects));
+        return string.Join($",\n{Indent}", assignments);
+    }
+
+    private static string GeneratePropertyAssignment(QueryField field, QueryObject parentObject, QueryDictionary queryObjects)
+    {
+        var soqlPrefix = $"{nameof(SoqlCollection)}.{parentObject.Key}";
+
+        var declaredPropertyType = field.TypeName.TrimEnd('?');
+        var elementType = (field.IsCollection && field.CollectionBaseType is not null)
+            ? field.CollectionBaseType.TrimEnd('?')
+            : declaredPropertyType;
+
+        var isNullable = field.TypeName.EndsWith("?") || !field.TypeName.Contains("System.") && field.TypeName != "string";
+
+        // If elementType is not a generated model, use primitive deserialization
+        if (!queryObjects.TryGetValue((elementType, parentObject.Key), out var _))
+        {
+            var primitiveDeserializer = GetPrimitiveDeserializer(elementType, isNullable);
+            var jsonProp = field.FieldName;
+            var deserializationCall = $"record.SafeGetValue(\"{jsonProp}\", static e => {primitiveDeserializer})";
+
+            if (field.IsCollection)
+            {
+                if (declaredPropertyType.EndsWith("[]"))
+                {
+                    return $"{field.PropertyName} = record.SafeGetArray(\"{jsonProp}\", static e => {primitiveDeserializer}) ?? System.Array.Empty<{elementType}>()";
+                }
+                return $"{field.PropertyName} = CreateCollectionInstance<{declaredPropertyType}, {elementType}>(record.SafeGetArray(\"{jsonProp}\", static e => {primitiveDeserializer}))";
+            }
+
+            return $"{field.PropertyName} = {deserializationCall}";
+        }
+
+        // Handle nested objects/collections
+        var nestedDeserializer = $"{soqlPrefix}.Model{GetClassName(elementType)}.DeserializeSoqlResponse";
+
+        if (field.IsCollection)
+        {
+            if (declaredPropertyType.EndsWith("[]"))
+            {
+                return $"{field.PropertyName} = {nestedDeserializer}(record.SafeGetValue(\"{field.FieldName}\", static e => e)) ?? System.Array.Empty<{elementType}>()";
+            }
+            return $"{field.PropertyName} = CreateCollectionInstance<{declaredPropertyType}, {elementType}>({nestedDeserializer}(record.SafeGetValue(\"{field.FieldName}\", static e => e)))";
+        }
+
+        return $"{field.PropertyName} = {nestedDeserializer}(record.SafeGetValue(\"{field.FieldName}\", static e => e)).FirstOrDefault()";
+    }
+
+    private static string GetPrimitiveDeserializer(string typeName, bool isNullable)
+    {
+        var coreType = typeName.TrimEnd('?');
+        var deserializer = coreType switch
+        {
+            "string" => "e.GetString()",
+            "int" or "Int32" => "e.GetInt32()",
+            "long" or "Int64" => "e.GetInt64()",
+            "bool" or "Boolean" => "e.GetBoolean()",
+            "double" or "Double" => "e.GetDouble()",
+            "decimal" or "Decimal" => "e.GetDecimal()",
+            "float" or "Single" => "e.GetSingle()",
+            "DateTime" => "e.GetDateTime()",
+            "DateTimeOffset" => "e.GetDateTimeOffset()",
+            "Guid" => "e.GetGuid()",
+            _ => $"System.Text.Json.JsonSerializer.Deserialize<{coreType}>(e.GetRawText())"
+        };
+
+        // Add null-forgiving operator for required properties to suppress warnings
+        if (!isNullable && (coreType == "string" || deserializer.Contains("Deserialize")))
+        {
+            deserializer += "!";
+        }
+
+        return deserializer;
+    }
+
+    private static string GetClassName(string className) =>
+        className.Substring(className.LastIndexOf('.') + 1).TrimEnd('?');
 
     public static InitializationContext AddSoqlCollectionSource(this InitializationContext ctx)
     {
         var source = $$"""
         // <auto-generated />
         // Generated by SoqlGen
+        #nullable enable
 
         namespace {{nameof(SoqlGen)}};
 
-        #nullable enable
         public static partial class {{nameof(SoqlCollection)}}
         {
-            internal static T ApplyOrDefault<T>(this System.Text.Json.JsonElement element, Func<System.Text.Json.JsonElement, T> apply)
+            /// <summary>
+            /// Safely extracts a value from JsonElement, returning default if null or missing.
+            /// </summary>
+            internal static T SafeGetValue<T>(this System.Text.Json.JsonElement record, string propName, System.Func<System.Text.Json.JsonElement, T> extractor)
             {
-                if(element.ValueKind is System.Text.Json.JsonValueKind.Null)
+                if (!record.TryGetProperty(propName, out var element))
                 {
                     return default!;
                 }
-                return apply(element);
+
+                if (element.ValueKind is System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined)
+                {
+                    return default!;
+                }
+
+                try
+                {
+                    return extractor(element);
+                }
+                catch (System.InvalidOperationException)
+                {
+                    return default!;
+                }
+            }
+
+            /// <summary>
+            /// Safely extracts an array from JsonElement.
+            /// </summary>
+            internal static T[]? SafeGetArray<T>(this System.Text.Json.JsonElement record, string propName, System.Func<System.Text.Json.JsonElement, T> extractor)
+            {
+                if (!record.TryGetProperty(propName, out var element))
+                {
+                    return null;
+                }
+
+                if (element.ValueKind is System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined)
+                {
+                    return null;
+                }
+
+                if (element.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    return null;
+                }
+
+                var length = element.GetArrayLength();
+                var result = new T[length];
+                
+                for (var i = 0; i < length; i++)
+                {
+                    try
+                    {
+                        result[i] = extractor(element[i]);
+                    }
+                    catch (System.InvalidOperationException)
+                    {
+                        result[i] = default!;
+                    }
+                }
+
+                return result;
+            }
+
+            /// <summary>
+            /// Creates an instance of a collection type from an array of elements.
+            /// </summary>
+            internal static TCollection CreateCollectionInstance<TCollection, TElement>(TElement[]? elements)
+            {
+                elements ??= System.Array.Empty<TElement>();
+                
+                try
+                {
+                    return (TCollection)System.Activator.CreateInstance(typeof(TCollection), new object[] { elements })!;
+                }
+                catch
+                {
+                    // Fallback for collections without array constructor
+                    var collection = System.Activator.CreateInstance<TCollection>();
+                    if (collection is System.Collections.Generic.ICollection<TElement> genericCollection)
+                    {
+                        foreach (var element in elements)
+                        {
+                            genericCollection.Add(element);
+                        }
+                    }
+                    return collection;
+                }
             }
         }
         """;
+
         ctx.AddSource($"{nameof(SoqlCollection)}.g.cs", SourceText.From(source, Encoding.UTF8));
         return ctx;
-    }
-}
-public static partial class Somethinf
-{
-    internal static T ApplyOrDefault<T>(this string element, Func<string, T> apply)
-    {
-        if (element.Length > 0)
-        {
-            return default!;
-        }
-        return apply(element);
     }
 }

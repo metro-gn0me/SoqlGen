@@ -22,16 +22,23 @@ internal static class SymbolHelpers
 
     public static Location? GetAttributeLocationForField(FieldInfo field, Compilation compilation)
     {
-        // Resolve property symbol by stored class+property identifier
+        // Re-resolve the property symbol from the current compilation to avoid stale syntax references
         var prop = TryResolveProperty(field.ClassName, field.PropertyName, compilation);
         if (prop is null)
         {
             return null;
         }
 
-        // Inspect each declaring syntax reference for the property and look for attributes
+        // Get fresh syntax references from the current compilation
         foreach (var decl in prop.DeclaringSyntaxReferences)
         {
+            // Ensure the syntax tree is part of the current compilation
+            var syntaxTree = decl.SyntaxTree;
+            if (!compilation.ContainsSyntaxTree(syntaxTree))
+            {
+                continue;
+            }
+
             var syntax = decl.GetSyntax();
             var attrLists = syntax.ChildNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.AttributeListSyntax>();
             foreach (var list in attrLists)
@@ -57,6 +64,7 @@ internal static class SymbolHelpers
             return null;
         }
 
+        // Re-resolve the type from the current compilation
         var type = compilation.GetTypeByMetadataName(obj.ClassName);
         if (type is null)
         {
@@ -65,6 +73,13 @@ internal static class SymbolHelpers
 
         foreach (var decl in type.DeclaringSyntaxReferences)
         {
+            // Ensure the syntax tree is part of the current compilation
+            var syntaxTree = decl.SyntaxTree;
+            if (!compilation.ContainsSyntaxTree(syntaxTree))
+            {
+                continue;
+            }
+
             var syntax = decl.GetSyntax();
             var attrLists = syntax.ChildNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.AttributeListSyntax>();
             foreach (var list in attrLists)

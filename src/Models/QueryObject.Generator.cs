@@ -6,7 +6,7 @@ namespace SoqlGen.Models;
 internal partial struct QueryObject
 {
     public (string? Query, Diagnostic? Diagnostic) GenerateQuery(
-        Dictionary<(string ClassName, string Key), QueryObject> queryObjects,
+        QueryDictionary queryObjects,
         HashSet<string>? visited = null,
         string? fromObject = null)
     {
@@ -26,7 +26,7 @@ internal partial struct QueryObject
     }
 
     public (List<string>? ProjectedFields, Diagnostic? Diagnostic) GetProjectedFields(
-        Dictionary<(string ClassName, string Key), QueryObject> queryObjects,
+        QueryDictionary queryObjects,
         HashSet<string> visited)
     {
         if (_cachedProjectedFields is not null)

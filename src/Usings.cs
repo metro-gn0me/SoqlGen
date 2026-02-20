@@ -1,1 +1,2 @@
 global using InitializationContext = Microsoft.CodeAnalysis.IncrementalGeneratorPostInitializationContext;
+global using QueryDictionary = System.Collections.Generic.Dictionary<(string ClassName, string Key), SoqlGen.Models.QueryObject>;
