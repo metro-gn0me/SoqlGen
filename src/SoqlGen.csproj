@@ -9,7 +9,7 @@
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
 
     <PackageId>SoqlGen</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>metro-gn0me</Authors>
     <Description>A source generator to dynamically generate SOQL queries from C# model classes</Description>
   </PropertyGroup>
