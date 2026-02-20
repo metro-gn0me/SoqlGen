@@ -13,3 +13,4 @@ SOQL005 | SoqlGen | Warning | DiagnosticDescriptors
 SOQL006 | SoqlGen | Error | DiagnosticDescriptors
 SOQL007 | SoqlGen | Error | DiagnosticDescriptors
 SOQL008 | SoqlGen | Error | DiagnosticDescriptors
+SOQL009 | SoqlGen | Error | DiagnosticDescriptors

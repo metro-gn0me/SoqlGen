@@ -36,6 +36,10 @@ internal static partial class InfoCollectors
     {
         var @object = attribute.ConstructorArguments.FirstOrDefault().Value?.ToString();
         var key = attribute.ConstructorArguments.Skip(1).FirstOrDefault().Value?.ToString();
+        var typeHandling = attribute.NamedArguments
+            .FirstOrDefault(na => na.Key == "TypeHandling").Value.Value;
+
+        var typeHandlingValue = typeHandling is int val ? val : 0;
         var targetSymbol = context.TargetSymbol;
 
         if (@object is null || key is null || targetSymbol is not INamedTypeSymbol modelSymbol)
@@ -43,6 +47,6 @@ internal static partial class InfoCollectors
             return null;
         }
 
-        return ObjectInfo.FromSymbol(@object, key, keyRequired, modelSymbol);
+        return ObjectInfo.FromSymbol(@object, key, keyRequired, typeHandlingValue, modelSymbol);
     }
 }

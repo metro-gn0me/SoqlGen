@@ -53,7 +53,16 @@ internal static class SymbolHelpers
 
                     if (attrType.Name is "SoqlFieldAttribute" or "SoqlField")
                     {
-                        return attr.GetLocation();
+                        // Check if the constructor argument matches the field key
+                        if (attr.ArgumentList?.Arguments.Count >= 2)
+                        {
+                            var keyArg = semanticModel.GetConstantValue(attr.ArgumentList.Arguments[1].Expression);
+                            if (keyArg.HasValue && keyArg.Value?.ToString() == field.Key)
+                            {
+                                return attr.GetLocation();
+                            }
+                        }
+                        continue;
                     }
                 }
             }

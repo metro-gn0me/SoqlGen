@@ -16,7 +16,9 @@ public class SoqlGenerator : IIncrementalGenerator
     {
         context.RegisterPostInitializationOutput(static ctx => ctx
             .AddSoqlObjectAttribute()
+            .AddSoqlTypeHandling()
             .AddSoqlFieldAttributeSource()
+            .AddSerializationHelpersSource()
             .AddSoqlCollectionSource());
 
         var objects = context.SyntaxProvider.CreateObjectCollector();

@@ -7,16 +7,19 @@ internal record struct ObjectInfo(
     string Key,
     bool KeyRequired,
     string ClassName,
-    string TargetSymbolKey)
+    string Namespace,
+    string TargetSymbolKey,
+    int TypeHandling)
 {
     // ObjectInfo stores stable strings rather than Roslyn symbols so we can re-resolve symbols on demand
     // against the compilation currently being analyzed. Use ResolveModelSymbol(compilation) to get the live symbol.
 
-    public static ObjectInfo FromSymbol(string objectName, string key, bool keyRequired, INamedTypeSymbol model)
+    public static ObjectInfo FromSymbol(string objectName, string key, bool keyRequired, int typeHandling, INamedTypeSymbol model)
     {
         // Use the model's display string as a stable identifier to re-resolve later
         var symbolKey = model.ToDisplayString();
-        return new ObjectInfo(objectName, key, keyRequired, model.ToDisplayString(), symbolKey);
+        var ns = model.ContainingNamespace.IsGlobalNamespace ? "" : model.ContainingNamespace.ToDisplayString();
+        return new ObjectInfo(objectName, key, keyRequired, model.ToDisplayString(), ns, symbolKey, typeHandling);
     }
 
     public readonly INamedTypeSymbol? ResolveModelSymbol(Compilation compilation)
@@ -32,8 +35,9 @@ internal record struct ObjectInfo(
     public readonly bool Equals(ObjectInfo other)
         => ObjectName == other.ObjectName
             && Key == other.Key
-            && ClassName == other.ClassName;
+            && ClassName == other.ClassName
+            && TypeHandling == other.TypeHandling;
 
     public override readonly int GetHashCode()
-        => HashCode.Combine(ObjectName, Key, ClassName);
+        => HashCode.Combine(ObjectName, Key, ClassName, TypeHandling);
 }

@@ -67,4 +67,12 @@ internal static class DiagnosticDescriptors
         "SoqlGen",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
+
+    public static readonly DiagnosticDescriptor ClassMustBePartial = new(
+        "SOQL009",
+        "Class must be partial",
+        "Class '{0}' must be partial to use SoqlGen attributes",
+        "SoqlGen",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
 }

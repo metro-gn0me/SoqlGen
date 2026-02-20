@@ -9,14 +9,20 @@ internal readonly struct QueryField
     public string TypeName { get; }
     public bool IsCollection { get; }
     public string? CollectionBaseType { get; }
+    public bool IsValueType { get; }
+    public bool IsNullable { get; }
+    public int TypeHandling { get; }
 
-    public QueryField(string fieldName, string propertyName, string typeName, bool isCollection, string? collectionBaseType)
+    public QueryField(string fieldName, string propertyName, string typeName, bool isCollection, string? collectionBaseType, bool isValueType, bool isNullable, int typeHandling)
     {
         FieldName = fieldName;
         PropertyName = propertyName;
         TypeName = typeName;
         IsCollection = isCollection;
         CollectionBaseType = collectionBaseType;
+        IsValueType = isValueType;
+        IsNullable = isNullable;
+        TypeHandling = typeHandling;
     }
 
     public static QueryField FromResolved(FieldInfo fieldInfo, IPropertySymbol propertySymbol)
@@ -42,10 +48,13 @@ internal readonly struct QueryField
                 collectionBase = "object";
             }
         }
+        
+        var isValueType = type.IsValueType;
+        var isNullable = !isValueType || (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T);
 
-        return new QueryField(fieldInfo.FieldName, fieldInfo.PropertyName, typeName, isCollection, collectionBase);
+        return new QueryField(fieldInfo.FieldName, fieldInfo.PropertyName, typeName, isCollection, collectionBase, isValueType, isNullable, fieldInfo.TypeHandling);
     }
 
     public static QueryField FromUnresolved(FieldInfo fieldInfo)
-        => new(fieldInfo.FieldName, fieldInfo.PropertyName, "object", false, null);
+        => new(fieldInfo.FieldName, fieldInfo.PropertyName, "object", false, null, false, true, fieldInfo.TypeHandling);
 }

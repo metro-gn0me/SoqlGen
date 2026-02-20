@@ -13,22 +13,32 @@ internal static partial class InfoCollectors
             .ForAttributeWithMetadataName(
                 $"{nameof(SoqlGen)}.{nameof(Texts.SoqlFieldAttribute)}",
                 predicate: (_, _) => true,
-                transform: (c, _) => ExtractFieldInfo(c))
-            .Where(info => info is not null)
-            .Select((info, _) => (FieldInfo)info!)
+                transform: (c, _) => ExtractFieldInfos(c))
+            .SelectMany((infos, _) => infos)
             .Collect();
     }
 
-    private static FieldInfo? ExtractFieldInfo(GeneratorAttributeSyntaxContext context)
+    private static ImmutableArray<FieldInfo> ExtractFieldInfos(GeneratorAttributeSyntaxContext context)
     {
-        var attribute = context.Attributes.FirstOrDefault(a => a.AttributeClass?.Name == nameof(Texts.SoqlFieldAttribute));
-        if (attribute is null)
-        {
-            return null;
-        }
+        var fieldAttributes = context.Attributes
+           .Where(a => a.AttributeClass?.Name == nameof(Texts.SoqlFieldAttribute))
+           .ToArray();
 
+        return fieldAttributes
+            .Select(a => ExtractFieldInfo(context, a))
+            .Where(info => info is not null)
+            .Cast<FieldInfo>()
+            .ToImmutableArray();
+    }
+
+    private static FieldInfo? ExtractFieldInfo(GeneratorAttributeSyntaxContext context, AttributeData attribute)
+    {
         var fieldName = attribute.ConstructorArguments.FirstOrDefault().Value?.ToString();
         var key = attribute.ConstructorArguments.Skip(1).FirstOrDefault().Value?.ToString();
+        var typeHandling = attribute.NamedArguments
+            .FirstOrDefault(na => na.Key == "TypeHandling").Value.Value;
+            
+        var typeHandlingValue = typeHandling is int val ? val : 0;
         var targetSymbol = context.TargetSymbol;
 
         if (fieldName is null || key is null || targetSymbol is not IPropertySymbol propSymbol)
@@ -36,6 +46,6 @@ internal static partial class InfoCollectors
             return null;
         }
 
-        return FieldInfo.FromSymbol(fieldName, key, propSymbol);
+        return FieldInfo.FromSymbol(fieldName, key, typeHandlingValue, propSymbol);
     }
 }
